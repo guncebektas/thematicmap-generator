@@ -1,9 +1,24 @@
-# Heatmap Generator
-Generate heatmaps from your CSV data with complete privacy. Your data stays in your browser -  no server upload.
+# Map Visualization Generator
+Generate heatmaps and thematic maps from your CSV data with complete privacy. Your data stays in your browser - no server upload.
 
 ## Live Demo
 
-Try it live at [heatmap.guncebektas.com](https://heatmap.guncebektas.com)
+Try heatmap live at [heatmap.guncebektas.com](https://heatmap.guncebektas.com)
+Try thematic map live at [thematicmap.guncebektas.com](https://thematicmap.guncebektas.com)
+
+## Visualization Types
+
+### Heatmap
+Heatmaps show concentration or intensity using a color gradient. They're ideal for:
+- Showing density patterns
+- Visualizing clusters
+- Representing continuous data across geographic areas
+
+### Thematic Map
+Thematic maps use colors to represent specific data values in defined regions. They're perfect for:
+- Comparing values between regions
+- Showing categorical data
+- Visualizing statistics by administrative boundaries (countries, states, etc.)
 
 ## Understanding Intensity
 
@@ -26,7 +41,9 @@ Real-world examples of what intensity might represent:
 
 ## CSV File Requirements
 
-### Required Columns
+### For Heatmaps
+
+#### Required Columns
 
 1. `Latitude`
    - Geographic latitude in decimal degrees
@@ -51,13 +68,38 @@ Real-world examples of what intensity might represent:
    - Used for documentation purposes
    - Not displayed on the map
 
-### Example CSV Format
+#### Example CSV Format for Heatmaps
 
 ```csv
 Latitude,Longitude,Intensity,Description
 40.7589,-73.9851,1.0,"Times Square"
 40.7654,-73.9812,0.7,"250m from Times Square"
 40.7712,-73.9754,0.4,"500m from Times Square"
+```
+
+### For Thematic Maps
+
+#### Required Columns
+
+1. `Region`
+   - Name or code of the region (country, state, etc.)
+   - Must match the region identifiers in the map data
+
+2. `Value`
+   - Numeric value to be represented by color
+   - Higher values will be shown with darker/more intense colors
+
+3. `Description` (Optional)
+   - Additional information about the region
+   - Used for tooltips or documentation
+
+#### Example CSV Format for Thematic Maps
+
+```csv
+Region,Value,Description
+USA,0.8,"United States data point"
+CAN,0.6,"Canada data point"
+MEX,0.4,"Mexico data point"
 ```
 
 ## Privacy
@@ -72,5 +114,6 @@ Created by [@guncebektas](https://github.com/guncebektas)
 
 - Leaflet.js for mapping
 - Leaflet.heat for heatmap visualization
+- GeoJSON for thematic map visualization
 - Bootstrap 5 for UI
 - Pure JavaScript (No frameworks required)
