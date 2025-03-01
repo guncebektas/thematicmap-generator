@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thematic Map Generator</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    
+    <!-- Required libraries -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Add Leaflet.markercluster for better handling of many markers -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    
+    <style>
+        #map {
+            height: 600px;
+            width: 100%;
+        }
+        .file-upload, .map-controls {
+            margin-bottom: 20px;
+        }
+        .info {
+            padding: 6px 8px;
+            font: 14px/16px Arial, Helvetica, sans-serif;
+            background: white;
+            background: rgba(255,255,255,0.8);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+        }
+        .info h4 {
+            margin: 0 0 5px;
+            color: #777;
+        }
+        .legend {
+            line-height: 18px;
+            color: #555;
+        }
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+        }
+        .shape-label {
+            background: none !important;
+            border: none !important;
+        }
+        .shape-label div {
+            width: 30px;
+            height: 30px;
+            line-height: 30px;
+            border-radius: 50%;
+            background: rgba(255, 0, 0, 0.8);
+            color: white;
+            font-weight: bold;
+            text-align: center;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <h2 class="mb-4">Thematic Map Generator</h2>
+                <p class="mb-4">
+                    Create interactive thematic maps with your geographic data. This tool allows you to visualize locations 
+                    and regional data with complete privacy - your data stays in your browser with no server upload required. 
+                    Upload CSV files with coordinates, select administrative boundaries, and customize your map style to create 
+                    informative visualizations for analysis or presentation.
+                </p>
+                <div class="row map-controls">
+                    <div class="col-md-4">
+                      <button class="btn btn-outline-primary w-100" onclick="downloadExample()">
+                          Download Example Dataset
+                      </button>
+                    </div>
+                    <div class="col-md-4">
+                        <input type="file" class="form-control" id="csvFile" accept=".csv">
+                    </div>
+                    <div class="col-md-4">
+                        <select class="form-select" id="mapStyle">
+                            <option value="osm" selected>OpenStreetMap Default</option>
+                            <option value="positron">Positron (Light)</option>
+                            <option value="dark-matter">Dark Matter</option>
+                            <option value="topo">OpenTopoMap</option>
+                            <option value="cyclosm">CyclOSM</option>
+                            <option value="hot">OSM Humanitarian</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 mt-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="geoJsonLayer" id="showNone" value="none" checked>
+                            <label class="form-check-label" for="showNone">
+                                No GeoJSON Layer
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mt-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="geoJsonLayer" id="showCities" value="cities">
+                            <label class="form-check-label" for="showCities">
+                                Show Türkiye Cities
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mt-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="geoJsonLayer" id="showDistricts" value="districts">
+                            <label class="form-check-label" for="showDistricts">
+                                Show Istanbul Districts
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-12 mt-3">
+                        <button class="btn btn-success w-100" onclick="showAlert()">Calculate Points in Regions</button>
+                    </div>
+                </div>
+                <div id="map"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Credits section -->
+    <div class="container mt-4 mb-4">
+        <div class="row">
+            <div class="col-12">
+                <hr>
+                <p class="text-center text-muted">
+                    Created by <a href="https://github.com/guncebektas" target="_blank" rel="noopener noreferrer">@guncebektas</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        let map, currentTileLayer;
+        let markers = []; // Array to store markers
+        let geojsonLayer; // For storing the cities GeoJSON layer
+        let districtLayer; // For storing the districts GeoJSON layer
+        let info; // For the info control
+        let legend; // For the legend control
+        let shapeLabels = []; // Şekil etiketlerini tutacak dizi
+
+        const mapStyles = {
+            osm: {
+                url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                attribution: 'OSM'
+            },
+            positron: {
+                url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                attribution: 'OSM, CARTO'
+            },
+            'dark-matter': {
+                url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+                attribution: 'OSM, CARTO'
+            },
+            'topo': {
+                url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+                attribution: '© OpenTopoMap'
+            },
+            'cyclosm': {
+                url: 'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
+                attribution: '© CyclOSM'
+            },
+            'hot': {
+                url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+                attribution: '© OpenStreetMap contributors, Tiles style by Humanitarian OpenStreetMap Team'
+            }
+        };
+
+        function setMapStyle(styleName) {
+            const style = mapStyles[styleName];
+            
+            // Remove current tile layer if it exists
+            if (currentTileLayer) {
+                map.removeLayer(currentTileLayer);
+            }
+
+            // Add new tile layer with minimal attribution
+            currentTileLayer = L.tileLayer(style.url, {
+                attribution: style.attribution,
+                attributionControl: true,
+                opacity: 1,
+                minZoom: 0,
+                maxZoom: 18
+            }).addTo(map);
+        }
+
+        // Initialize empty map
+        function initMap() {
+            // Create map centered on Istanbul
+            map = L.map('map').setView([41.0082, 28.9784], 10);
+            setMapStyle('osm'); // Set default style
+            
+            // Create info control
+            info = L.control();
+            info.onAdd = function (map) {
+                this._div = L.DomUtil.create('div', 'info');
+                this.update();
+                return this._div;
+            };
+            info.update = function (props, layerType) {
+                if (!props) {
+                    this._div.innerHTML = '<h4>Region Information</h4>Hover over a region';
+                    return;
+                }
+                
+                if (layerType === 'district') {
+                    this._div.innerHTML = '<h4>District Information</h4>' +
+                        '<b>' + props.name + '</b>';
+                } else {
+                    this._div.innerHTML = '<h4>City Information</h4>' +
+                        '<b>' + props.name + '</b>';
+                }
+            };
+            info.addTo(map);
+        }
+
+        // Handle style changes
+        document.getElementById('mapStyle').addEventListener('change', function(e) {
+            setMapStyle(e.target.value);
+        });
+
+        function calculateCenter(locations) {
+            var totalLat = 0;
+            var totalLng = 0;
+            var count = locations.length;
+            
+            locations.forEach(function(location) {
+                totalLat += location[0];
+                totalLng += location[1];
+            });
+            
+            return [totalLat / count, totalLng / count];
+        }
+
+        // Nokta sayısına göre renk döndüren fonksiyon
+        function getColorByPointCount(count, minCount, maxCount) {
+            // Eğer min ve max aynıysa (tüm bölgelerde aynı sayıda nokta varsa)
+            if (minCount === maxCount) {
+                return '#FEB24C'; // Orta değer rengi döndür
+            }
+            
+            // Değeri 0-1 aralığına normalize et
+            const normalized = (count - minCount) / (maxCount - minCount);
+            
+            // Renk skalası (sarıdan kırmızıya)
+            return normalized > 0.8 ? '#800026' : // Çok yüksek
+                   normalized > 0.6 ? '#BD0026' : // Yüksek
+                   normalized > 0.4 ? '#E31A1C' : // Orta-yüksek
+                   normalized > 0.2 ? '#FC4E2A' : // Orta
+                   normalized > 0.1 ? '#FD8D3C' : // Orta-düşük
+                   normalized > 0.05 ? '#FEB24C' : // Düşük
+                   normalized > 0 ? '#FED976' : // Çok düşük
+                   '#FFEDA0'; // Sıfır veya çok az
+        }
+
+        // Style function for GeoJSON
+        function style(feature) {
+            return {
+                fillColor: getColor(feature.properties.population),
+                weight: 2,
+                opacity: 1,
+                color: 'white',
+                dashArray: '3',
+                fillOpacity: 0.7
+            };
+        }
+        
+        // Get color based on population
+        function getColor(d) {
+            return d > 5000000 ? '#800026' :
+                   d > 2000000 ? '#BD0026' :
+                   d > 1000000 ? '#E31A1C' :
+                   d > 500000  ? '#FC4E2A' :
+                   d > 200000  ? '#FD8D3C' :
+                   d > 100000  ? '#FEB24C' :
+                   d > 50000   ? '#FED976' :
+                              '#FFEDA0';
+        }
+        
+        // Highlight feature on mouseover for cities
+        function highlightFeature(e) {
+            var layer = e.target;
+            
+            layer.setStyle({
+                weight: 5,
+                color: '#666',
+                dashArray: '',
+                fillOpacity: 0.7
+            });
+            
+            if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+                layer.bringToFront();
+            }
+            
+            info.update(layer.feature.properties, 'city');
+        }
+        
+        // Reset highlight on mouseout for cities
+        function resetHighlight(e) {
+            geojsonLayer.resetStyle(e.target);
+            info.update();
+        }
+        
+        // Zoom to feature on click
+        function zoomToFeature(e) {
+            map.fitBounds(e.target.getBounds());
+        }
+        
+        // Set listeners on each city feature
+        function onEachFeature(feature, layer) {
+            layer.on({
+                mouseover: highlightFeature,
+                mouseout: resetHighlight,
+                click: zoomToFeature
+            });
+        }
+        
+        // Load GeoJSON data
+        function loadGeoJSON() {
+            // Show loading indicator
+            const loadingMessage = document.createElement('div');
+            loadingMessage.id = 'loading-cities';
+            loadingMessage.className = 'alert alert-info';
+            loadingMessage.innerHTML = 'Loading Türkiye cities data... This may take a moment.';
+            document.querySelector('.map-controls').appendChild(loadingMessage);
+            
+            fetch('https://raw.githubusercontent.com/cihadturhan/tr-geojson/master/geo/tr-cities-utf8.json')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (geojsonLayer) {
+                        map.removeLayer(geojsonLayer);
+                    }
+                    
+                    // Remove loading message
+                    const loadingElement = document.getElementById('loading-cities');
+                    if (loadingElement) loadingElement.remove();
+                    
+                    geojsonLayer = L.geoJSON(data, {
+                        style: style,
+                        onEachFeature: onEachFeature
+                    }).addTo(map);
+                })
+                .catch(error => {
+                    console.error('Error loading GeoJSON:', error);
+                    
+                    // Remove loading message
+                    const loadingElement = document.getElementById('loading-cities');
+                    if (loadingElement) loadingElement.remove();
+                    
+                    // Show error message
+                    const errorMessage = document.createElement('div');
+                    errorMessage.className = 'alert alert-warning';
+                    errorMessage.innerHTML = 'Could not load Türkiye cities data. <button class="btn btn-sm btn-outline-primary ms-2" onclick="retryLoadCities()">Retry</button>';
+                    document.querySelector('.map-controls').appendChild(errorMessage);
+                    
+                    // Reset radio to none
+                    document.getElementById('showNone').checked = true;
+                });
+        }
+        
+        // Retry loading cities
+        function retryLoadCities() {
+            // Remove any error messages
+            const alerts = document.querySelectorAll('.map-controls .alert');
+            alerts.forEach(alert => alert.remove());
+            
+            // Try loading again
+            loadGeoJSON();
+        }
+
+        // Handle GeoJSON layer selection
+        document.querySelectorAll('input[name="geoJsonLayer"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                // Remove existing layers
+                if (geojsonLayer) {
+                    map.removeLayer(geojsonLayer);
+                }
+                if (districtLayer) {
+                    map.removeLayer(districtLayer);
+                }
+                
+                // Load selected layer
+                if (this.value === 'cities') {
+                    loadGeoJSON();
+                } else if (this.value === 'districts') {
+                    loadDistrictsGeoJSON();
+                }
+            });
+        });
+
+        // Highlight feature on mouseover for districts
+        function highlightDistrictFeature(e) {
+            var layer = e.target;
+            
+            layer.setStyle({
+                weight: 5,
+                color: '#666',
+                dashArray: '',
+                fillOpacity: 0.7
+            });
+            
+            if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+                layer.bringToFront();
+            }
+            
+            info.update(layer.feature.properties, 'district');
+        }
+        
+        // Reset highlight on mouseout for districts
+        function resetDistrictHighlight(e) {
+            districtLayer.resetStyle(e.target);
+            info.update();
+        }
+        
+        // Set listeners on each district feature
+        function onEachDistrictFeature(feature, layer) {
+            layer.on({
+                mouseover: highlightDistrictFeature,
+                mouseout: resetDistrictHighlight,
+                click: zoomToFeature
+            });
+        }
+        
+        // Style function for districts
+        function districtStyle(feature) {
+            return {
+                fillColor: '#FEB24C', // Solid yellow-orange color like cities
+                weight: 2,
+                opacity: 1,
+                color: 'white',
+                dashArray: '3',
+                fillOpacity: 0.7
+            };
+        }
+        
+        // Load districts GeoJSON data
+        function loadDistrictsGeoJSON() {
+            // Show loading indicator
+            const loadingMessage = document.createElement('div');
+            loadingMessage.id = 'loading-districts';
+            loadingMessage.className = 'alert alert-info';
+            loadingMessage.innerHTML = 'Loading Istanbul districts data... This may take a moment.';
+            document.querySelector('.map-controls').appendChild(loadingMessage);
+            
+            // Use a more reliable URL for Istanbul districts
+            fetch('https://raw.githubusercontent.com/ozanyerli/istanbul-districts-geojson/main/istanbul-districts.json')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (districtLayer) {
+                        map.removeLayer(districtLayer);
+                    }
+                    
+                    // Remove loading message
+                    const loadingElement = document.getElementById('loading-districts');
+                    if (loadingElement) loadingElement.remove();
+                    
+                    districtLayer = L.geoJSON(data, {
+                        style: districtStyle,
+                        onEachFeature: onEachDistrictFeature
+                    }).addTo(map);
+                    
+                    // Center map on Istanbul
+                    map.setView([41.0082, 28.9784], 10);
+                })
+                .catch(error => {
+                    console.error('Error loading Istanbul Districts GeoJSON:', error);
+                    
+                    // Remove loading message
+                    const loadingElement = document.getElementById('loading-districts');
+                    if (loadingElement) loadingElement.remove();
+                    
+                    // Show error message
+                    const errorMessage = document.createElement('div');
+                    errorMessage.className = 'alert alert-warning';
+                    errorMessage.innerHTML = 'Could not load Istanbul districts data. <button class="btn btn-sm btn-outline-primary ms-2" onclick="retryLoadDistricts()">Retry</button>';
+                    document.querySelector('.map-controls').appendChild(errorMessage);
+                    
+                    // Reset radio to none
+                    document.getElementById('showNone').checked = true;
+                });
+        }
+
+        // Retry loading districts
+        function retryLoadDistricts() {
+            // Remove any error messages
+            const alerts = document.querySelectorAll('.map-controls .alert');
+            alerts.forEach(alert => alert.remove());
+            
+            // Try loading again
+            loadDistrictsGeoJSON();
+        }
+
+        // Process the uploaded CSV file
+        document.getElementById('csvFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                // Clear existing markers
+                clearMarkers();
+
+                const csvData = event.target.result;
+                const rows = csvData.split('\n').slice(1); // Skip header
+                const locations = rows
+                    .filter(row => row.trim() !== '') // Skip empty rows
+                    .map(row => {
+                        const columns = row.split(',');
+                        const lat = parseFloat(columns[0]);
+                        const lng = parseFloat(columns[1]);
+                        const description = columns.length > 3 ? columns[3] : '';
+                        return [lat, lng, description];
+                    });
+
+                const centerPoint = calculateCenter(locations);
+                map.setView(centerPoint, 15);
+
+                // Add markers directly to the map (no clustering)
+                locations.forEach(location => {
+                    const marker = L.marker([location[0], location[1]]);
+                    
+                    // Add popup with description if available
+                    if (location[2]) {
+                        marker.bindPopup(location[2]);
+                    }
+                    
+                    marker.addTo(map);
+                    markers.push(marker);
+                });
+            };
+
+            reader.readAsText(file);
+        });
+
+        // Clear all markers from the map
+        function clearMarkers() {
+            markers.forEach(marker => {
+                map.removeLayer(marker);
+            });
+            markers = [];
+        }
+
+        // Download example dataset with Istanbul locations and one in Tekirdağ
+        function downloadExample() {
+            const csvContent = `Latitude,Longitude,Intensity,Description
+41.0082,28.9784,0.9,Sultanahmet Square
+41.0111,28.9683,0.8,Grand Bazaar
+41.0086,28.9802,0.7,Hagia Sophia
+41.0096,29.0883,0.8,Galata Tower
+41.0383,28.9869,0.6,Taksim Square
+41.0421,29.0084,0.7,Dolmabahçe Palace
+41.0462,29.0047,0.5,Ortaköy Mosque
+40.9862,29.0265,0.8,Kadıköy
+40.9732,29.0512,0.6,Rumeli Fortress
+41.0256,28.9743,0.7,Süleymaniye Mosque
+40.9771,27.5085,0.7,Tekirdağ Sahil`;
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", "location_data.csv");
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Bir noktanın bir polygon içinde olup olmadığını kontrol eden fonksiyon
+        function isPointInPolygon(point, polygon) {
+            // Ray casting algoritması
+            let inside = false;
+            const x = point[1], y = point[0]; // lng, lat
+            
+            for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+                const xi = polygon[i][0], yi = polygon[i][1];
+                const xj = polygon[j][0], yj = polygon[j][1];
+                
+                const intersect = ((yi > y) !== (yj > y)) && 
+                    (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            
+            return inside;
+        }
+
+        // Bir noktanın bir GeoJSON özelliği içinde olup olmadığını kontrol eden fonksiyon
+        function isPointInFeature(point, feature) {
+            if (!feature.geometry) return false;
+            
+            if (feature.geometry.type === 'Polygon') {
+                // Polygon için tüm koordinat dizilerini kontrol et
+                for (let i = 0; i < feature.geometry.coordinates.length; i++) {
+                    if (isPointInPolygon(point, feature.geometry.coordinates[i])) {
+                        return true;
+                    }
+                }
+            } else if (feature.geometry.type === 'MultiPolygon') {
+                // MultiPolygon için tüm polygonları kontrol et
+                for (let i = 0; i < feature.geometry.coordinates.length; i++) {
+                    for (let j = 0; j < feature.geometry.coordinates[i].length; j++) {
+                        if (isPointInPolygon(point, feature.geometry.coordinates[i][j])) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            
+            return false;
+        }
+
+        // Şekil etiketlerini temizleyen fonksiyon
+        function clearShapeLabels() {
+            shapeLabels.forEach(label => {
+                map.removeLayer(label);
+            });
+            shapeLabels = [];
+        }
+
+        // Polygon merkezi hesaplama fonksiyonu
+        function calculatePolygonCenter(coordinates) {
+            // MultiPolygon için en büyük poligonu kullan
+            if (coordinates.length > 0 && Array.isArray(coordinates[0]) && Array.isArray(coordinates[0][0])) {
+                // En büyük alanı bul
+                let maxArea = 0;
+                let largestPolygon = coordinates[0];
+                
+                for (let i = 0; i < coordinates.length; i++) {
+                    const area = calculatePolygonArea(coordinates[i]);
+                    if (area > maxArea) {
+                        maxArea = area;
+                        largestPolygon = coordinates[i];
+                    }
+                }
+                
+                coordinates = largestPolygon;
+            }
+            
+            // Dış halka kullan (ilk halka)
+            const ring = coordinates[0];
+            
+            // Centroid hesapla (ağırlık merkezi)
+            let area = 0;
+            let cx = 0;
+            let cy = 0;
+            
+            for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+                const xi = ring[i][0];
+                const yi = ring[i][1];
+                const xj = ring[j][0];
+                const yj = ring[j][1];
+                
+                const f = xi * yj - xj * yi;
+                area += f;
+                cx += (xi + xj) * f;
+                cy += (yi + yj) * f;
+            }
+            
+            area /= 2;
+            area = Math.abs(area); // Alanın mutlak değerini al
+            
+            cx = cx / (6 * area);
+            cy = cy / (6 * area);
+            
+            // [lat, lng] formatında döndür
+            return [cy, cx];
+        }
+
+        // Polygon alanını hesaplayan yardımcı fonksiyon
+        function calculatePolygonArea(coordinates) {
+            const ring = coordinates[0]; // Dış halka
+            let area = 0;
+            
+            for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+                area += ring[i][0] * ring[j][1];
+                area -= ring[i][1] * ring[j][0];
+            }
+            
+            area = Math.abs(area / 2);
+            return area;
+        }
+
+        // Basitleştirilmiş merkez hesaplama fonksiyonu
+        function simpleCenterCalculation(feature) {
+            try {
+                // Leaflet'in kendi bounds hesaplamasını kullan
+                const layer = L.geoJSON(feature);
+                const bounds = layer.getBounds();
+                return bounds.getCenter();
+            } catch (e) {
+                console.error("Error calculating center:", e);
+                return null;
+            }
+        }
+
+        // GeoJSON şekil sayısını ve içindeki noktaları gösteren fonksiyon
+        function showAlert() {
+            // Eğer haritada işaretçi yoksa uyarı ver
+            if (markers.length === 0) {
+                alert("Please upload a CSV file with locations first.");
+                return;
+            }
+            
+            // Önce mevcut etiketleri temizle
+            clearShapeLabels();
+            
+            // Konum işaretçilerini gizle
+            markers.forEach(marker => {
+                marker.setOpacity(0);
+            });
+            
+            // Konum işaretçilerini tekrar göstermek için buton ekle
+            addShowMarkersButton();
+            
+            // Hangi GeoJSON katmanının seçili olduğunu kontrol et
+            if (document.getElementById('showCities').checked) {
+                if (geojsonLayer) {
+                    // İşaretçilerin koordinatlarını al
+                    const locations = markers.map(marker => {
+                        const latlng = marker.getLatLng();
+                        return [latlng.lat, latlng.lng];
+                    });
+                    
+                    // GeoJSON verilerini al
+                    const geoJsonData = geojsonLayer.toGeoJSON();
+                    
+                    // Tüm illerdeki toplam nokta sayısını hesapla
+                    let totalPointsInCities = 0;
+                    const cityCounts = {};
+                    
+                    // İlk geçiş: Nokta sayılarını hesapla
+                    geoJsonData.features.forEach(feature => {
+                        if (feature.properties && feature.properties.name) {
+                            let pointsInCity = 0;
+                            
+                            locations.forEach(location => {
+                                if (isPointInFeature(location, feature)) {
+                                    pointsInCity++;
+                                    totalPointsInCities++;
+                                }
+                            });
+                            
+                            cityCounts[feature.properties.name] = pointsInCity;
+                        }
+                    });
+                    
+                    // Min ve max değerleri bul
+                    const counts = Object.values(cityCounts);
+                    const minCount = Math.min(...counts);
+                    const maxCount = Math.max(...counts);
+                    
+                    // Mevcut GeoJSON katmanını kaldır
+                    map.removeLayer(geojsonLayer);
+                    
+                    // Yeni stil fonksiyonu
+                    function cityStyleByCount(feature) {
+                        const count = cityCounts[feature.properties.name] || 0;
+                        return {
+                            fillColor: getColorByPointCount(count, minCount, maxCount),
+                            weight: 2,
+                            opacity: 1,
+                            color: 'white',
+                            dashArray: '3',
+                            fillOpacity: 0.7
+                        };
+                    }
+                    
+                    // Yeni GeoJSON katmanı oluştur ve ekle
+                    geojsonLayer = L.geoJSON(geoJsonData, {
+                        style: cityStyleByCount,
+                        onEachFeature: onEachFeature
+                    }).addTo(map);
+                    
+                    // İkinci geçiş: Etiketleri ekle
+                    geoJsonData.features.forEach(feature => {
+                        if (feature.properties && feature.properties.name) {
+                            const pointsInCity = cityCounts[feature.properties.name] || 0;
+                            
+                            // Şehrin merkezini hesapla
+                            let center;
+                            try {
+                                // Önce basit merkez hesaplama yöntemini dene
+                                center = simpleCenterCalculation(feature);
+                                
+                                // Eğer başarısız olursa, mevcut yöntemi kullan
+                                if (!center && feature.geometry) {
+                                    if (feature.geometry.type === 'Polygon') {
+                                        center = calculatePolygonCenter(feature.geometry.coordinates);
+                                    } else if (feature.geometry.type === 'MultiPolygon') {
+                                        center = calculatePolygonCenter(feature.geometry.coordinates[0]);
+                                    }
+                                }
+                            } catch (e) {
+                                console.error("Error calculating center for", feature.properties.name, e);
+                            }
+                            
+                            if (center) {
+                                // Etiket oluştur
+                                const label = L.divIcon({
+                                    className: 'shape-label',
+                                    html: `<div>${pointsInCity}</div>`,
+                                    iconSize: [30, 30],
+                                    iconAnchor: [15, 15]
+                                });
+                                
+                                // Etiketi haritaya ekle
+                                const marker = L.marker(center, {
+                                    icon: label,
+                                    zIndexOffset: 1000 // Diğer elemanların üzerinde olmasını sağla
+                                }).addTo(map);
+                                
+                                // Popup ekle
+                                marker.bindPopup(`${feature.properties.name}: ${pointsInCity} points`);
+                                
+                                shapeLabels.push(marker);
+                            }
+                        }
+                    });
+                    
+                    // Lejant ekle
+                    if (legend) {
+                        map.removeControl(legend);
+                    }
+                    
+                    legend = L.control({position: 'bottomright'});
+                    legend.onAdd = function (map) {
+                        const div = L.DomUtil.create('div', 'info legend');
+                        const grades = [0, Math.ceil(maxCount * 0.05), Math.ceil(maxCount * 0.1), 
+                                       Math.ceil(maxCount * 0.2), Math.ceil(maxCount * 0.4), 
+                                       Math.ceil(maxCount * 0.6), Math.ceil(maxCount * 0.8), maxCount];
+                        
+                        div.innerHTML = '<h4>Point Count</h4>';
+                        
+                        // Lejant için döngü
+                        for (let i = 0; i < grades.length - 1; i++) {
+                            div.innerHTML +=
+                                '<i style="background:' + getColorByPointCount(grades[i] + 1, minCount, maxCount) + '"></i> ' +
+                                grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '<br>' : '+');
+                        }
+                        
+                        return div;
+                    };
+                    legend.addTo(map);
+                    
+                    console.log("Total points in cities:", totalPointsInCities);
+                    console.log("City counts:", cityCounts);
+                    
+                    // Haritayı Türkiye'ye merkezle
+                    map.setView([39.1, 35.6], 6);
+                } else {
+                    alert("Türkiye Cities layer is selected but not loaded yet. Please wait for it to load.");
+                }
+            } 
+            else if (document.getElementById('showDistricts').checked) {
+                if (districtLayer) {
+                    // İşaretçilerin koordinatlarını al
+                    const locations = markers.map(marker => {
+                        const latlng = marker.getLatLng();
+                        return [latlng.lat, latlng.lng];
+                    });
+                    
+                    // GeoJSON verilerini al
+                    const geoJsonData = districtLayer.toGeoJSON();
+                    
+                    // Tüm ilçelerdeki toplam nokta sayısını hesapla
+                    let totalPointsInDistricts = 0;
+                    const districtCounts = {};
+                    
+                    // İlk geçiş: Nokta sayılarını hesapla
+                    geoJsonData.features.forEach(feature => {
+                        if (feature.properties && feature.properties.name) {
+                            let pointsInDistrict = 0;
+                            
+                            locations.forEach(location => {
+                                if (isPointInFeature(location, feature)) {
+                                    pointsInDistrict++;
+                                    totalPointsInDistricts++;
+                                }
+                            });
+                            
+                            districtCounts[feature.properties.name] = pointsInDistrict;
+                        }
+                    });
+                    
+                    // Min ve max değerleri bul
+                    const counts = Object.values(districtCounts);
+                    const minCount = Math.min(...counts);
+                    const maxCount = Math.max(...counts);
+                    
+                    // Mevcut GeoJSON katmanını kaldır
+                    map.removeLayer(districtLayer);
+                    
+                    // Yeni stil fonksiyonu
+                    function districtStyleByCount(feature) {
+                        const count = districtCounts[feature.properties.name] || 0;
+                        return {
+                            fillColor: getColorByPointCount(count, minCount, maxCount),
+                            weight: 2,
+                            opacity: 1,
+                            color: 'white',
+                            dashArray: '3',
+                            fillOpacity: 0.7
+                        };
+                    }
+                    
+                    // Yeni GeoJSON katmanı oluştur ve ekle
+                    districtLayer = L.geoJSON(geoJsonData, {
+                        style: districtStyleByCount,
+                        onEachFeature: onEachDistrictFeature
+                    }).addTo(map);
+                    
+                    // İkinci geçiş: Etiketleri ekle
+                    geoJsonData.features.forEach(feature => {
+                        if (feature.properties && feature.properties.name) {
+                            const pointsInDistrict = districtCounts[feature.properties.name] || 0;
+                            
+                            // İlçenin merkezini hesapla
+                            let center;
+                            try {
+                                // Önce basit merkez hesaplama yöntemini dene
+                                center = simpleCenterCalculation(feature);
+                                
+                                // Eğer başarısız olursa, mevcut yöntemi kullan
+                                if (!center && feature.geometry) {
+                                    if (feature.geometry.type === 'Polygon') {
+                                        center = calculatePolygonCenter(feature.geometry.coordinates);
+                                    } else if (feature.geometry.type === 'MultiPolygon') {
+                                        center = calculatePolygonCenter(feature.geometry.coordinates[0]);
+                                    }
+                                }
+                            } catch (e) {
+                                console.error("Error calculating center for", feature.properties.name, e);
+                            }
+                            
+                            if (center) {
+                                // Etiket oluştur
+                                const label = L.divIcon({
+                                    className: 'shape-label',
+                                    html: `<div>${pointsInDistrict}</div>`,
+                                    iconSize: [30, 30],
+                                    iconAnchor: [15, 15]
+                                });
+                                
+                                // Etiketi haritaya ekle
+                                const marker = L.marker(center, {
+                                    icon: label,
+                                    zIndexOffset: 1000 // Diğer elemanların üzerinde olmasını sağla
+                                }).addTo(map);
+                                
+                                // Popup ekle
+                                marker.bindPopup(`${feature.properties.name}: ${pointsInDistrict} points`);
+                                
+                                shapeLabels.push(marker);
+                            }
+                        }
+                    });
+                    
+                    // Lejant ekle
+                    if (legend) {
+                        map.removeControl(legend);
+                    }
+                    
+                    legend = L.control({position: 'bottomright'});
+                    legend.onAdd = function (map) {
+                        const div = L.DomUtil.create('div', 'info legend');
+                        const grades = [0, Math.ceil(maxCount * 0.05), Math.ceil(maxCount * 0.1), 
+                                       Math.ceil(maxCount * 0.2), Math.ceil(maxCount * 0.4), 
+                                       Math.ceil(maxCount * 0.6), Math.ceil(maxCount * 0.8), maxCount];
+                        
+                        div.innerHTML = '<h4>Point Count</h4>';
+                        
+                        // Lejant için döngü
+                        for (let i = 0; i < grades.length - 1; i++) {
+                            div.innerHTML +=
+                                '<i style="background:' + getColorByPointCount(grades[i] + 1, minCount, maxCount) + '"></i> ' +
+                                grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '<br>' : '+');
+                        }
+                        
+                        return div;
+                    };
+                    legend.addTo(map);
+                    
+                    console.log("Total points in Istanbul districts:", totalPointsInDistricts);
+                    console.log("District counts:", districtCounts);
+                    
+                    // Haritayı İstanbul'a merkezle
+                    map.setView([41.0082, 28.9784], 10);
+                } else {
+                    alert("Istanbul Districts layer is selected but not loaded yet. Please wait for it to load.");
+                }
+            }
+            else {
+                console.log("No GeoJSON layer selected");
+                alert("No GeoJSON layer selected. Please select a layer first.");
+                
+                // GeoJSON katmanı seçili değilse işaretçileri tekrar göster
+                markers.forEach(marker => {
+                    marker.setOpacity(1);
+                });
+            }
+        }
+
+        // Konum işaretçilerini tekrar göstermek için bir buton ekleyelim
+        function addShowMarkersButton() {
+            // Eğer buton zaten varsa, tekrar ekleme
+            if (document.getElementById('showMarkersBtn')) return;
+            
+            const button = document.createElement('button');
+            button.id = 'showMarkersBtn';
+            button.className = 'btn btn-outline-secondary w-100 mt-2';
+            button.innerHTML = 'Show Location Markers';
+            button.onclick = function() {
+                markers.forEach(marker => {
+                    marker.setOpacity(1);
+                });
+                this.remove(); // Butonu kaldır
+            };
+            
+            document.querySelector('.map-controls').appendChild(button);
+        }
+
+        // Initialize the map when the page loads
+        initMap();
+    </script>
+</body>
+</html>
